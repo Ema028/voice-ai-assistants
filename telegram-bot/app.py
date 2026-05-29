@@ -1,5 +1,6 @@
 import os
 import openai
+import uuid
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from telegram import Update
@@ -9,11 +10,9 @@ load_dotenv()
 
 client = openai.OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API")
-)
+    api_key=os.environ.get("GROQ_API"))
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-
 
 async def transcrever_audio_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ouvindo o áudio... Aguarde um momento.")
@@ -22,31 +21,28 @@ async def transcrever_audio_telegram(update: Update, context: ContextTypes.DEFAU
         file = await context.bot.get_file(update.message.voice.file_id)
     elif update.message.audio:
         file = await context.bot.get_file(update.message.audio.file_id)
-    else:
-        await update.message.reply_text("Por favor, me envie ou encaminhe um áudio.")
-        return
+    else: return
 
-    caminho_baixado = "audio_recebido.ogg"
-    caminho_pedaco = "pedaco_audio.ogg"
+    id_unico = str(uuid.uuid4())
+    caminho_baixado = f"audio_{id_unico}.ogg"
+    caminho_pedaco = f"pedaco_{id_unico}.ogg"
 
     try:
         await file.download_to_drive(caminho_baixado)
 
         audio = AudioSegment.from_file(caminho_baixado)
-        dez_minutos = 10 * 60 * 1000
+        dez_minutos = 600000
         transcricao_completa = ""
 
-        #cortar o aúdio por causa limite do whisper
+        #cortar o aúdio por causa limite da api
         for i in range(0, len(audio), dez_minutos):
             pedaco = audio[i:i + dez_minutos]
-
-
             pedaco.export(caminho_pedaco, format="ogg")
+
             with open(caminho_pedaco, "rb") as chunk_file:
                 transcricao = client.audio.transcriptions.create(
                     model="whisper-large-v3",
-                    file=chunk_file
-                )
+                    file=chunk_file)
                 transcricao_completa += transcricao.text + " "
 
         #devolve o texto em pedaços para não quebrar o limite do telegram
@@ -55,7 +51,6 @@ async def transcrever_audio_telegram(update: Update, context: ContextTypes.DEFAU
                 await update.message.reply_text(transcricao_completa[x:x + 4000])
         else:
             await update.message.reply_text("Não consegui ouvir nada nesse áudio.")
-
     except Exception as e:
         await update.message.reply_text(f"Ocorreu um erro na transcrição: {e}")
 
